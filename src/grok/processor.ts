@@ -410,7 +410,16 @@ export function createOpenAiStreamFromGrokNdjson(
             let cardUrlContent = "";
             if (showCardUrl) {
               const cardAttachment = grok.cardAttachment;
-              console.log(`[Card URL] Stream - messageTag: ${grok.messageTag}, Found cardAttachment:`, cardAttachment);
+              const messageTag = grok.messageTag;
+
+              // 详细日志：输出整个grok对象的键
+              if (messageTag === "final") {
+                console.log(`[Card URL] Stream - messageTag: final, grok keys:`, Object.keys(grok));
+                console.log(`[Card URL] Stream - Full grok object:`, JSON.stringify(grok));
+              }
+
+              console.log(`[Card URL] Stream - messageTag: ${messageTag}, cardAttachment:`, cardAttachment);
+
               if (cardAttachment && typeof cardAttachment === "object") {
                 try {
                   const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
