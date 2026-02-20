@@ -114,6 +114,75 @@ function normalizeGeneratedAssetUrls(input: unknown): string[] {
   return out;
 }
 
+function formatCardUrl(url: string): string {
+  if (!url) return "";
+  try {
+    let urlWithoutProto = url;
+    if (url.startsWith("http://")) {
+      urlWithoutProto = url.slice(7);
+    } else if (url.startsWith("https://")) {
+      urlWithoutProto = url.slice(8);
+    }
+
+    const domain = urlWithoutProto.split("/", 1)[0];
+    return ` [${domain}](${url}) `;
+  } catch {
+    return ` [${url}](${url}) `;
+  }
+}
+
+function formatImageCard(cardData: Record<string, unknown>): string {
+  try {
+    const image = cardData.image as Record<string, unknown> | undefined;
+    if (!image) return "";
+
+    const link = typeof cardData.link === "string" ? cardData.link : (typeof image.link === "string" ? image.link : "");
+    const title = typeof image.title === "string" ? image.title : "";
+    const thumbnail = typeof image.thumbnail === "string" ? image.thumbnail : "";
+    const original = typeof image.original === "string" ? image.original : "";
+
+    // 优先使用原图，如果没有则使用缩略图
+    const imageUrl = original || thumbnail;
+    if (!imageUrl) return "";
+
+    // 如果有链接，格式化为可点击的图片；否则只显示图片
+    if (link) {
+      return `\n[![${title || "Image"}](${imageUrl})](${link})\n`;
+    }
+    return `\n![${title || "Image"}](${imageUrl})\n`;
+  } catch {
+    return "";
+  }
+}
+
+function processCardAttachments(cardAttachments: unknown): string {
+  if (!Array.isArray(cardAttachments)) return "";
+
+  let result = "";
+  for (const cardJson of cardAttachments) {
+    try {
+      if (typeof cardJson === "string") {
+        const cardData = JSON.parse(cardJson) as Record<string, unknown>;
+        const cardType = cardData.cardType;
+
+        // 处理图片卡片
+        if (cardType === "image_card") {
+          result += formatImageCard(cardData);
+        } else {
+          // 处理普通 URL 卡片
+          const url = cardData.url;
+          if (typeof url === "string" && url) {
+            result += formatCardUrl(url);
+          }
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  return result;
+}
+
 export function createOpenAiStreamFromGrokNdjson(
   grokResp: Response,
   opts: {
@@ -121,6 +190,7 @@ export function createOpenAiStreamFromGrokNdjson(
     settings: GrokSettings;
     global: GlobalSettings;
     origin: string;
+    showCardUrl?: boolean;
     onFinish?: (result: { status: number; duration: number }) => Promise<void> | void;
   },
 ): ReadableStream<Uint8Array> {
@@ -332,6 +402,33 @@ export function createOpenAiStreamFromGrokNdjson(
             if (typeof rawToken !== "string" || !rawToken) continue;
             let token = rawToken;
 
+            // 处理卡片附件（附加到token）- 仅在启用时
+            if (opts.showCardUrl) {
+              const cardAttachment = grok.cardAttachment;
+              if (cardAttachment && typeof cardAttachment === "object") {
+                try {
+                  const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
+                  if (typeof jsonData === "string") {
+                    const cardData = JSON.parse(jsonData) as Record<string, unknown>;
+                    const cardType = cardData.cardType;
+
+                    // 处理图片卡片
+                    if (cardType === "image_card") {
+                      token += formatImageCard(cardData);
+                    } else {
+                      // 处理普通 URL 卡片
+                      const url = cardData.url;
+                      if (typeof url === "string" && url) {
+                        token += formatCardUrl(url);
+                      }
+                    }
+                  }
+                } catch {
+                  // ignore parse errors
+                }
+              }
+            }
+
             if (filteredTags.some((t) => token.includes(t))) continue;
 
             const currentIsThinking = Boolean(grok.isThinking);
@@ -404,7 +501,7 @@ export function createOpenAiStreamFromGrokNdjson(
 
 export async function parseOpenAiFromGrokNdjson(
   grokResp: Response,
-  opts: { cookie: string; settings: GrokSettings; global: GlobalSettings; origin: string; requestedModel: string },
+  opts: { cookie: string; settings: GrokSettings; global: GlobalSettings; origin: string; requestedModel: string; showCardUrl?: boolean },
 ): Promise<Record<string, unknown>> {
   const { global, origin, requestedModel, settings } = opts;
   const text = await grokResp.text();
@@ -452,6 +549,14 @@ export async function parseOpenAiFromGrokNdjson(
 
     if (typeof modelResp.model === "string" && modelResp.model) model = modelResp.model;
     if (typeof modelResp.message === "string") content = modelResp.message;
+
+    // 处理卡片附件 - 仅在启用时
+    if (opts.showCardUrl) {
+      const cardAttachmentsJson = modelResp.cardAttachmentsJson;
+      if (cardAttachmentsJson) {
+        content += processCardAttachments(cardAttachmentsJson);
+      }
+    }
 
     const rawUrls = modelResp.generatedImageUrls;
     const urls = normalizeGeneratedAssetUrls(rawUrls);

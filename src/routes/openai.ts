@@ -1199,6 +1199,7 @@ openAiRoutes.post("/chat/completions", async (c) => {
       model?: string;
       messages?: any[];
       stream?: boolean;
+      showcardurl?: boolean;
       video_config?: {
         aspect_ratio?: string;
         video_length?: number;
@@ -1212,6 +1213,9 @@ openAiRoutes.post("/chat/completions", async (c) => {
     if (!Array.isArray(body.messages)) return c.json(openAiError("Missing 'messages'", "missing_messages"), 400);
     if (!isValidModel(requestedModel))
       return c.json(openAiError(`Model '${requestedModel}' not supported`, "model_not_supported"), 400);
+
+    // 判断是否启用卡片 URL 显示：1. 模型名包含 showcardurl  2. 参数中 showcardurl=true
+    const showCardUrl = requestedModel.toLowerCase().includes("showcardurl") || toBool(body.showcardurl);
 
     const settingsBundle = await getSettings(c.env);
     const cfg = MODEL_CONFIG[requestedModel]!;
@@ -1303,6 +1307,7 @@ openAiRoutes.post("/chat/completions", async (c) => {
             settings: settingsBundle.grok,
             global: settingsBundle.global,
             origin,
+            showCardUrl,
             onFinish: async ({ status, duration }) => {
               await addRequestLog(c.env.DB, {
                 ip,
@@ -1334,6 +1339,7 @@ openAiRoutes.post("/chat/completions", async (c) => {
           global: settingsBundle.global,
           origin,
           requestedModel,
+          showCardUrl,
         });
 
         const duration = (Date.now() - start) / 1000;
