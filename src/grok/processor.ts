@@ -334,14 +334,18 @@ export function createOpenAiStreamFromGrokNdjson(
               }
 
               const grok = (data as any).result?.response;
-              if (!grok) continue;
 
-            // 调试：打印原始 JSON 和 grok 对象
-            if (showCardUrl) {
-              console.log(`[Card URL] Raw JSON: ${jsonStr.substring(0, 200)}`);
-              console.log(`[Card URL] Grok keys: ${Object.keys(grok).join(", ")}`);
-              console.log(`[Card URL] hasCardAttachment: ${!!grok.cardAttachment}, hasToken: ${!!grok.token}`);
-            }
+              // 调试：打印原始 JSON 和 grok 对象
+              if (showCardUrl) {
+                console.log(`[Card URL] Raw JSON: ${jsonStr.substring(0, 200)}`);
+                console.log(`[Card URL] Has grok: ${!!grok}`);
+                if (grok) {
+                  console.log(`[Card URL] Grok keys: ${Object.keys(grok).join(", ")}`);
+                  console.log(`[Card URL] hasCardAttachment: ${!!grok.cardAttachment}, hasToken: ${!!grok.token}`);
+                }
+              }
+
+              if (!grok) continue;
 
             // 处理卡片附件 - 提取 URL 并立即输出
             if (showCardUrl && grok.cardAttachment) {
@@ -458,43 +462,8 @@ export function createOpenAiStreamFromGrokNdjson(
             // Text chat stream
             if (Array.isArray(rawToken)) continue;
 
-            // 处理卡片附件 - 即使没有token也要处理
-            let cardUrlContent = "";
-            if (showCardUrl && grok.cardAttachment) {
-              const cardAttachment = grok.cardAttachment;
-              if (typeof cardAttachment === "object") {
-                try {
-                  const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
-                  if (typeof jsonData === "string") {
-                    const cardData = JSON.parse(jsonData) as Record<string, unknown>;
-                    const cardType = cardData.cardType;
-                    console.log(`[Card URL] Stream - Card type: ${cardType}, url: ${cardData.url}`);
-
-                    // 处理图片卡片
-                    if (cardType === "image_card") {
-                      cardUrlContent = formatImageCard(cardData);
-                    } else {
-                      // 处理普通 URL 卡片
-                      const url = cardData.url;
-                      if (typeof url === "string" && url) {
-                        cardUrlContent = formatCardUrl(url);
-                      }
-                    }
-                  }
-                } catch (e) {
-                  console.log(`[Card URL] Stream - Parse error:`, e);
-                }
-              }
-            }
-
-            // 如果有卡片内容但没有token，直接输出卡片
-            if (cardUrlContent && (!rawToken || typeof rawToken !== "string")) {
-              controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, cardUrlContent)));
-              continue;
-            }
-
             if (typeof rawToken !== "string" || !rawToken) continue;
-            let token = rawToken + cardUrlContent;
+            let token = rawToken;
 
             if (filteredTags.some((t) => token.includes(t))) continue;
 
