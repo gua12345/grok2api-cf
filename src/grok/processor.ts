@@ -405,13 +405,12 @@ export function createOpenAiStreamFromGrokNdjson(
 
             // Text chat stream
             if (Array.isArray(rawToken)) continue;
-            if (typeof rawToken !== "string" || !rawToken) continue;
-            let token = rawToken;
 
-            // 处理卡片附件（附加到token）- 仅在启用时
+            // 处理卡片附件 - 即使没有token也要处理
+            let cardUrlContent = "";
             if (showCardUrl) {
               const cardAttachment = grok.cardAttachment;
-              console.log(`[Card URL] Stream - Found cardAttachment:`, cardAttachment);
+              console.log(`[Card URL] Stream - messageTag: ${grok.messageTag}, Found cardAttachment:`, cardAttachment);
               if (cardAttachment && typeof cardAttachment === "object") {
                 try {
                   const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
@@ -422,20 +421,29 @@ export function createOpenAiStreamFromGrokNdjson(
 
                     // 处理图片卡片
                     if (cardType === "image_card") {
-                      token += formatImageCard(cardData);
+                      cardUrlContent = formatImageCard(cardData);
                     } else {
                       // 处理普通 URL 卡片
                       const url = cardData.url;
                       if (typeof url === "string" && url) {
-                        token += formatCardUrl(url);
+                        cardUrlContent = formatCardUrl(url);
                       }
                     }
                   }
-                } catch {
-                  // ignore parse errors
+                } catch (e) {
+                  console.log(`[Card URL] Stream - Parse error:`, e);
                 }
               }
             }
+
+            // 如果有卡片内容但没有token，直接输出卡片
+            if (cardUrlContent && (!rawToken || typeof rawToken !== "string")) {
+              controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, cardUrlContent)));
+              continue;
+            }
+
+            if (typeof rawToken !== "string" || !rawToken) continue;
+            let token = rawToken + cardUrlContent;
 
             if (filteredTags.some((t) => token.includes(t))) continue;
 
