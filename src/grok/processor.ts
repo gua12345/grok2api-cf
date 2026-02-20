@@ -321,9 +321,34 @@ export function createOpenAiStreamFromGrokNdjson(
             const grok = (data as any).result?.response;
             if (!grok) continue;
 
-            // 调试：检查是否有cardAttachment
+            // 处理卡片附件 - 提取 URL 并立即输出
             if (showCardUrl && grok.cardAttachment) {
-              console.log(`[Card URL] Stream - Found cardAttachment in grok:`, grok.cardAttachment);
+              const cardAttachment = grok.cardAttachment;
+              if (typeof cardAttachment === "object") {
+                try {
+                  const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
+                  if (typeof jsonData === "string") {
+                    const cardData = JSON.parse(jsonData) as Record<string, unknown>;
+                    const cardType = cardData.cardType;
+                    const url = cardData.url;
+                    console.log(`[Card URL] Found card - type: ${cardType}, url: ${url}`);
+
+                    let cardContent = "";
+                    if (cardType === "image_card") {
+                      cardContent = formatImageCard(cardData);
+                    } else if (typeof url === "string" && url) {
+                      cardContent = formatCardUrl(url);
+                    }
+
+                    if (cardContent) {
+                      console.log(`[Card URL] Outputting card content: ${cardContent}`);
+                      controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, cardContent)));
+                    }
+                  }
+                } catch (e) {
+                  console.log(`[Card URL] Parse error:`, e);
+                }
+              }
             }
 
             const userRespModel = grok.userResponse?.model;
