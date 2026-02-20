@@ -347,166 +347,166 @@ export function createOpenAiStreamFromGrokNdjson(
 
               if (!grok) continue;
 
-            // 处理卡片附件 - 提取 URL 并立即输出
-            if (showCardUrl && grok.cardAttachment) {
-              const cardAttachment = grok.cardAttachment;
-              if (typeof cardAttachment === "object") {
-                try {
-                  const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
-                  if (typeof jsonData === "string") {
-                    const cardData = JSON.parse(jsonData) as Record<string, unknown>;
-                    const cardType = cardData.cardType;
-                    const url = cardData.url;
-                    console.log(`[Card URL] Found card - type: ${cardType}, url: ${url}`);
+              // 处理卡片附件 - 提取 URL 并立即输出
+              if (showCardUrl && grok.cardAttachment) {
+                const cardAttachment = grok.cardAttachment;
+                if (typeof cardAttachment === "object") {
+                  try {
+                    const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
+                    if (typeof jsonData === "string") {
+                      const cardData = JSON.parse(jsonData) as Record<string, unknown>;
+                      const cardType = cardData.cardType;
+                      const url = cardData.url;
+                      console.log(`[Card URL] Found card - type: ${cardType}, url: ${url}`);
 
-                    let cardContent = "";
-                    if (cardType === "image_card") {
-                      cardContent = formatImageCard(cardData);
-                    } else if (typeof url === "string" && url) {
-                      cardContent = formatCardUrl(url);
+                      let cardContent = "";
+                      if (cardType === "image_card") {
+                        cardContent = formatImageCard(cardData);
+                      } else if (typeof url === "string" && url) {
+                        cardContent = formatCardUrl(url);
+                      }
+
+                      if (cardContent) {
+                        console.log(`[Card URL] Outputting card content: ${cardContent}`);
+                        controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, cardContent)));
+                      }
                     }
+                  } catch (e) {
+                    console.log(`[Card URL] Parse error:`, e);
+                  }
+                }
+              }
 
-                    if (cardContent) {
-                      console.log(`[Card URL] Outputting card content: ${cardContent}`);
-                      controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, cardContent)));
+              const userRespModel = grok.userResponse?.model;
+              if (typeof userRespModel === "string" && userRespModel.trim()) currentModel = userRespModel.trim();
+
+              // Video generation stream
+              const videoResp = grok.streamingVideoGenerationResponse;
+              if (videoResp) {
+                const progress = typeof videoResp.progress === "number" ? videoResp.progress : 0;
+                const videoUrl = typeof videoResp.videoUrl === "string" ? videoResp.videoUrl : "";
+                const thumbUrl = typeof videoResp.thumbnailImageUrl === "string" ? videoResp.thumbnailImageUrl : "";
+
+                if (progress > lastVideoProgress) {
+                  lastVideoProgress = progress;
+                  if (showThinking) {
+                    let msg = "";
+                    if (!videoProgressStarted) {
+                      msg = `<think>视频已生成${progress}%\n`;
+                      videoProgressStarted = true;
+                    } else if (progress < 100) {
+                      msg = `视频已生成${progress}%\n`;
+                    } else {
+                      msg = `视频已生成${progress}%</think>\n`;
                     }
+                    controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, msg)));
                   }
-                } catch (e) {
-                  console.log(`[Card URL] Parse error:`, e);
-                }
-              }
-            }
-
-            const userRespModel = grok.userResponse?.model;
-            if (typeof userRespModel === "string" && userRespModel.trim()) currentModel = userRespModel.trim();
-
-            // Video generation stream
-            const videoResp = grok.streamingVideoGenerationResponse;
-            if (videoResp) {
-              const progress = typeof videoResp.progress === "number" ? videoResp.progress : 0;
-              const videoUrl = typeof videoResp.videoUrl === "string" ? videoResp.videoUrl : "";
-              const thumbUrl = typeof videoResp.thumbnailImageUrl === "string" ? videoResp.thumbnailImageUrl : "";
-
-              if (progress > lastVideoProgress) {
-                lastVideoProgress = progress;
-                if (showThinking) {
-                  let msg = "";
-                  if (!videoProgressStarted) {
-                    msg = `<think>视频已生成${progress}%\n`;
-                    videoProgressStarted = true;
-                  } else if (progress < 100) {
-                    msg = `视频已生成${progress}%\n`;
-                  } else {
-                    msg = `视频已生成${progress}%</think>\n`;
-                  }
-                  controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, msg)));
-                }
-              }
-
-              if (videoUrl) {
-                const videoPath = encodeAssetPath(videoUrl);
-                const src = toImgProxyUrl(global, origin, videoPath);
-
-                let poster: string | undefined;
-                if (thumbUrl) {
-                  const thumbPath = encodeAssetPath(thumbUrl);
-                  poster = toImgProxyUrl(global, origin, thumbPath);
                 }
 
-                controller.enqueue(
-                  encoder.encode(
-                    makeChunk(
-                      id,
-                      created,
-                      currentModel,
-                      buildVideoHtml({
-                        videoUrl: src,
-                        posterPreview: settings.video_poster_preview === true,
-                        ...(poster ? { posterUrl: poster } : {}),
-                      }),
-                    ),
-                  ),
-                );
-              }
-              continue;
-            }
+                if (videoUrl) {
+                  const videoPath = encodeAssetPath(videoUrl);
+                  const src = toImgProxyUrl(global, origin, videoPath);
 
-            if (grok.imageAttachmentInfo) isImage = true;
-            const rawToken = grok.token;
-
-            if (isImage) {
-              const modelResp = grok.modelResponse;
-              if (modelResp) {
-                const urls = normalizeGeneratedAssetUrls(modelResp.generatedImageUrls);
-                if (urls.length) {
-                  const linesOut: string[] = [];
-                  for (const u of urls) {
-                    const imgPath = encodeAssetPath(u);
-                    const imgUrl = toImgProxyUrl(global, origin, imgPath);
-                    linesOut.push(`![Generated Image](${imgUrl})`);
+                  let poster: string | undefined;
+                  if (thumbUrl) {
+                    const thumbPath = encodeAssetPath(thumbUrl);
+                    poster = toImgProxyUrl(global, origin, thumbPath);
                   }
+
                   controller.enqueue(
-                    encoder.encode(makeChunk(id, created, currentModel, linesOut.join("\n"), "stop")),
+                    encoder.encode(
+                      makeChunk(
+                        id,
+                        created,
+                        currentModel,
+                        buildVideoHtml({
+                          videoUrl: src,
+                          posterPreview: settings.video_poster_preview === true,
+                          ...(poster ? { posterUrl: poster } : {}),
+                        }),
+                      ),
+                    ),
                   );
-                  controller.enqueue(encoder.encode(makeDone()));
-                  if (opts.onFinish) await opts.onFinish({ status: finalStatus, duration: (Date.now() - startTime) / 1000 });
-                  controller.close();
-                  return;
                 }
-              } else if (typeof rawToken === "string" && rawToken) {
-                controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, rawToken)));
+                continue;
               }
-              continue;
-            }
 
-            // Text chat stream
-            if (Array.isArray(rawToken)) continue;
+              if (grok.imageAttachmentInfo) isImage = true;
+              const rawToken = grok.token;
 
-            if (typeof rawToken !== "string" || !rawToken) continue;
-            let token = rawToken;
-
-            if (filteredTags.some((t) => token.includes(t))) continue;
-
-            const currentIsThinking = Boolean(grok.isThinking);
-            const messageTag = grok.messageTag;
-
-            if (thinkingFinished && currentIsThinking) continue;
-
-            if (grok.toolUsageCardId && grok.webSearchResults?.results && Array.isArray(grok.webSearchResults.results)) {
-              if (currentIsThinking) {
-                if (showThinking) {
-                  let appended = "";
-                  for (const r of grok.webSearchResults.results) {
-                    const title = typeof r.title === "string" ? r.title : "";
-                    const url = typeof r.url === "string" ? r.url : "";
-                    const preview = typeof r.preview === "string" ? r.preview.replace(/\n/g, "") : "";
-                    appended += `\n- [${title}](${url} \"${preview}\")`;
+              if (isImage) {
+                const modelResp = grok.modelResponse;
+                if (modelResp) {
+                  const urls = normalizeGeneratedAssetUrls(modelResp.generatedImageUrls);
+                  if (urls.length) {
+                    const linesOut: string[] = [];
+                    for (const u of urls) {
+                      const imgPath = encodeAssetPath(u);
+                      const imgUrl = toImgProxyUrl(global, origin, imgPath);
+                      linesOut.push(`![Generated Image](${imgUrl})`);
+                    }
+                    controller.enqueue(
+                      encoder.encode(makeChunk(id, created, currentModel, linesOut.join("\n"), "stop")),
+                    );
+                    controller.enqueue(encoder.encode(makeDone()));
+                    if (opts.onFinish) await opts.onFinish({ status: finalStatus, duration: (Date.now() - startTime) / 1000 });
+                    controller.close();
+                    return;
                   }
-                  token += `${appended}\n`;
+                } else if (typeof rawToken === "string" && rawToken) {
+                  controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, rawToken)));
+                }
+                continue;
+              }
+
+              // Text chat stream
+              if (Array.isArray(rawToken)) continue;
+
+              if (typeof rawToken !== "string" || !rawToken) continue;
+              let token = rawToken;
+
+              if (filteredTags.some((t) => token.includes(t))) continue;
+
+              const currentIsThinking = Boolean(grok.isThinking);
+              const messageTag = grok.messageTag;
+
+              if (thinkingFinished && currentIsThinking) continue;
+
+              if (grok.toolUsageCardId && grok.webSearchResults?.results && Array.isArray(grok.webSearchResults.results)) {
+                if (currentIsThinking) {
+                  if (showThinking) {
+                    let appended = "";
+                    for (const r of grok.webSearchResults.results) {
+                      const title = typeof r.title === "string" ? r.title : "";
+                      const url = typeof r.url === "string" ? r.url : "";
+                      const preview = typeof r.preview === "string" ? r.preview.replace(/\n/g, "") : "";
+                      appended += `\n- [${title}](${url} \"${preview}\")`;
+                    }
+                    token += `${appended}\n`;
+                  } else {
+                    continue;
+                  }
                 } else {
                   continue;
                 }
-              } else {
-                continue;
               }
-            }
 
-            let content = token;
-            if (messageTag === "header") content = `\n\n${token}\n\n`;
+              let content = token;
+              if (messageTag === "header") content = `\n\n${token}\n\n`;
 
-            let shouldSkip = false;
-            if (!isThinking && currentIsThinking) {
-              if (showThinking) content = `<think>\n${content}`;
-              else shouldSkip = true;
-            } else if (isThinking && !currentIsThinking) {
-              if (showThinking) content = `\n</think>\n${content}`;
-              thinkingFinished = true;
-            } else if (currentIsThinking && !showThinking) {
-              shouldSkip = true;
-            }
+              let shouldSkip = false;
+              if (!isThinking && currentIsThinking) {
+                if (showThinking) content = `<think>\n${content}`;
+                else shouldSkip = true;
+              } else if (isThinking && !currentIsThinking) {
+                if (showThinking) content = `\n</think>\n${content}`;
+                thinkingFinished = true;
+              } else if (currentIsThinking && !showThinking) {
+                shouldSkip = true;
+              }
 
-            if (!shouldSkip) controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, content)));
-            isThinking = currentIsThinking;
+              if (!shouldSkip) controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, content)));
+              isThinking = currentIsThinking;
             }
           }
         }
