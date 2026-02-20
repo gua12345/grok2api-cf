@@ -1214,11 +1214,13 @@ openAiRoutes.post("/chat/completions", async (c) => {
 
     // 判断是否启用卡片 URL 显示：1. 模型名包含 showcardurl  2. 参数中 showcardurl=true
     const showCardUrl = requestedModel.toLowerCase().includes("showcardurl") || toBool(body.showcardurl);
+    console.log(`[Card URL] Requested model: ${requestedModel}, showCardUrl: ${showCardUrl}`);
 
     // 如果模型名包含 -showcardurl 后缀，去掉后缀进行验证
     const normalizedModel = requestedModel.toLowerCase().endsWith("-showcardurl")
       ? requestedModel.slice(0, -"-showcardurl".length)
       : requestedModel;
+    console.log(`[Card URL] Normalized model: ${normalizedModel}`);
 
     if (!isValidModel(normalizedModel))
       return c.json(openAiError(`Model '${requestedModel}' not supported`, "model_not_supported"), 400);

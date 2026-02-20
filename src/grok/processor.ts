@@ -156,14 +156,19 @@ function formatImageCard(cardData: Record<string, unknown>): string {
 }
 
 function processCardAttachments(cardAttachments: unknown): string {
-  if (!Array.isArray(cardAttachments)) return "";
+  if (!Array.isArray(cardAttachments)) {
+    console.log(`[Card URL] cardAttachments is not an array:`, typeof cardAttachments);
+    return "";
+  }
 
+  console.log(`[Card URL] Processing ${cardAttachments.length} card attachments`);
   let result = "";
   for (const cardJson of cardAttachments) {
     try {
       if (typeof cardJson === "string") {
         const cardData = JSON.parse(cardJson) as Record<string, unknown>;
         const cardType = cardData.cardType;
+        console.log(`[Card URL] Card type: ${cardType}, url: ${cardData.url}`);
 
         // 处理图片卡片
         if (cardType === "image_card") {
@@ -194,7 +199,8 @@ export function createOpenAiStreamFromGrokNdjson(
     onFinish?: (result: { status: number; duration: number }) => Promise<void> | void;
   },
 ): ReadableStream<Uint8Array> {
-  const { settings, global, origin } = opts;
+  const { settings, global, origin, showCardUrl } = opts;
+  console.log(`[Card URL] createOpenAiStreamFromGrokNdjson - showCardUrl: ${showCardUrl}`);
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
 
@@ -403,14 +409,16 @@ export function createOpenAiStreamFromGrokNdjson(
             let token = rawToken;
 
             // 处理卡片附件（附加到token）- 仅在启用时
-            if (opts.showCardUrl) {
+            if (showCardUrl) {
               const cardAttachment = grok.cardAttachment;
+              console.log(`[Card URL] Stream - Found cardAttachment:`, cardAttachment);
               if (cardAttachment && typeof cardAttachment === "object") {
                 try {
                   const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
                   if (typeof jsonData === "string") {
                     const cardData = JSON.parse(jsonData) as Record<string, unknown>;
                     const cardType = cardData.cardType;
+                    console.log(`[Card URL] Stream - Card type: ${cardType}, url: ${cardData.url}`);
 
                     // 处理图片卡片
                     if (cardType === "image_card") {
@@ -503,7 +511,8 @@ export async function parseOpenAiFromGrokNdjson(
   grokResp: Response,
   opts: { cookie: string; settings: GrokSettings; global: GlobalSettings; origin: string; requestedModel: string; showCardUrl?: boolean },
 ): Promise<Record<string, unknown>> {
-  const { global, origin, requestedModel, settings } = opts;
+  const { global, origin, requestedModel, settings, showCardUrl } = opts;
+  console.log(`[Card URL] parseOpenAiFromGrokNdjson - showCardUrl: ${showCardUrl}`);
   const text = await grokResp.text();
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -551,10 +560,13 @@ export async function parseOpenAiFromGrokNdjson(
     if (typeof modelResp.message === "string") content = modelResp.message;
 
     // 处理卡片附件 - 仅在启用时
-    if (opts.showCardUrl) {
+    if (showCardUrl) {
       const cardAttachmentsJson = modelResp.cardAttachmentsJson;
+      console.log(`[Card URL] Found cardAttachmentsJson:`, cardAttachmentsJson);
       if (cardAttachmentsJson) {
-        content += processCardAttachments(cardAttachmentsJson);
+        const cardContent = processCardAttachments(cardAttachmentsJson);
+        console.log(`[Card URL] Processed card content:`, cardContent);
+        content += cardContent;
       }
     }
 
