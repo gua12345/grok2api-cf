@@ -321,6 +321,11 @@ export function createOpenAiStreamFromGrokNdjson(
             const grok = (data as any).result?.response;
             if (!grok) continue;
 
+            // 调试：检查是否有cardAttachment
+            if (showCardUrl && grok.cardAttachment) {
+              console.log(`[Card URL] Stream - Found cardAttachment in grok:`, grok.cardAttachment);
+            }
+
             const userRespModel = grok.userResponse?.model;
             if (typeof userRespModel === "string" && userRespModel.trim()) currentModel = userRespModel.trim();
 
@@ -408,19 +413,9 @@ export function createOpenAiStreamFromGrokNdjson(
 
             // 处理卡片附件 - 即使没有token也要处理
             let cardUrlContent = "";
-            if (showCardUrl) {
+            if (showCardUrl && grok.cardAttachment) {
               const cardAttachment = grok.cardAttachment;
-              const messageTag = grok.messageTag;
-
-              // 详细日志：输出整个grok对象的键
-              if (messageTag === "final") {
-                console.log(`[Card URL] Stream - messageTag: final, grok keys:`, Object.keys(grok));
-                console.log(`[Card URL] Stream - Full grok object:`, JSON.stringify(grok));
-              }
-
-              console.log(`[Card URL] Stream - messageTag: ${messageTag}, cardAttachment:`, cardAttachment);
-
-              if (cardAttachment && typeof cardAttachment === "object") {
+              if (typeof cardAttachment === "object") {
                 try {
                   const jsonData = (cardAttachment as Record<string, unknown>).jsonData;
                   if (typeof jsonData === "string") {
