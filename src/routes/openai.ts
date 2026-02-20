@@ -1211,14 +1211,20 @@ openAiRoutes.post("/chat/completions", async (c) => {
     requestedModel = String(body.model ?? "");
     if (!requestedModel) return c.json(openAiError("Missing 'model'", "missing_model"), 400);
     if (!Array.isArray(body.messages)) return c.json(openAiError("Missing 'messages'", "missing_messages"), 400);
-    if (!isValidModel(requestedModel))
-      return c.json(openAiError(`Model '${requestedModel}' not supported`, "model_not_supported"), 400);
 
     // 判断是否启用卡片 URL 显示：1. 模型名包含 showcardurl  2. 参数中 showcardurl=true
     const showCardUrl = requestedModel.toLowerCase().includes("showcardurl") || toBool(body.showcardurl);
 
+    // 如果模型名包含 -showcardurl 后缀，去掉后缀进行验证
+    const normalizedModel = requestedModel.toLowerCase().endsWith("-showcardurl")
+      ? requestedModel.slice(0, -"-showcardurl".length)
+      : requestedModel;
+
+    if (!isValidModel(normalizedModel))
+      return c.json(openAiError(`Model '${requestedModel}' not supported`, "model_not_supported"), 400);
+
     const settingsBundle = await getSettings(c.env);
-    const cfg = MODEL_CONFIG[requestedModel]!;
+    const cfg = MODEL_CONFIG[normalizedModel]!;
 
     const retryCodes = Array.isArray(settingsBundle.grok.retry_status_codes)
       ? settingsBundle.grok.retry_status_codes
@@ -1237,14 +1243,14 @@ openAiRoutes.post("/chat/completions", async (c) => {
     const quota = await enforceQuota({
       env: c.env,
       apiAuth: c.get("apiAuth"),
-      model: requestedModel,
+      model: normalizedModel,
       kind: quotaKind as any,
       ...(cfg.is_image_model ? { imageCount: 2 } : {}),
     });
     if (!quota.ok) return quota.resp;
 
     for (let attempt = 0; attempt < maxRetry; attempt++) {
-      const chosen = await selectBestToken(c.env.DB, requestedModel);
+      const chosen = await selectBestToken(c.env.DB, normalizedModel);
       if (!chosen) return c.json(openAiError("No available token", "NO_AVAILABLE_TOKEN"), 503);
 
       const jwt = chosen.token;
@@ -1276,7 +1282,7 @@ openAiRoutes.post("/chat/completions", async (c) => {
         }
 
         const { payload, referer } = buildConversationPayload({
-          requestModel: requestedModel,
+          requestModel: normalizedModel,
           content,
           imgIds,
           imgUris,
