@@ -291,35 +291,50 @@ export function createOpenAiStreamFromGrokNdjson(
           buffer += decoder.decode(value, { stream: true });
 
           let idx: number;
+          // 处理换行符分隔的 NDJSON
           while ((idx = buffer.indexOf("\n")) !== -1) {
             const line = buffer.slice(0, idx).trim();
             buffer = buffer.slice(idx + 1);
             if (!line) continue;
 
-            let data: GrokNdjson;
-            try {
-              data = JSON.parse(line) as GrokNdjson;
-            } catch {
-              continue;
+            // 处理 }{ 连接的多个 JSON 对象
+            const jsonObjects: string[] = [];
+            let current = line;
+            while (current) {
+              const closeIdx = current.indexOf("}{");
+              if (closeIdx === -1) {
+                jsonObjects.push(current);
+                break;
+              }
+              jsonObjects.push(current.slice(0, closeIdx + 1));
+              current = current.slice(closeIdx + 1);
             }
 
-            firstReceived = true;
-            lastChunkTime = Date.now();
+            for (const jsonStr of jsonObjects) {
+              let data: GrokNdjson;
+              try {
+                data = JSON.parse(jsonStr) as GrokNdjson;
+              } catch {
+                continue;
+              }
 
-            const err = (data as any).error;
-            if (err?.message) {
-              finalStatus = 500;
-              controller.enqueue(
-                encoder.encode(makeChunk(id, created, currentModel, `Error: ${String(err.message)}`, "stop")),
-              );
-              controller.enqueue(encoder.encode(makeDone()));
-              if (opts.onFinish) await opts.onFinish({ status: finalStatus, duration: (Date.now() - startTime) / 1000 });
-              controller.close();
-              return;
-            }
+              firstReceived = true;
+              lastChunkTime = Date.now();
 
-            const grok = (data as any).result?.response;
-            if (!grok) continue;
+              const err = (data as any).error;
+              if (err?.message) {
+                finalStatus = 500;
+                controller.enqueue(
+                  encoder.encode(makeChunk(id, created, currentModel, `Error: ${String(err.message)}`, "stop")),
+                );
+                controller.enqueue(encoder.encode(makeDone()));
+                if (opts.onFinish) await opts.onFinish({ status: finalStatus, duration: (Date.now() - startTime) / 1000 });
+                controller.close();
+                return;
+              }
+
+              const grok = (data as any).result?.response;
+              if (!grok) continue;
 
             // 调试：打印 grok 对象的关键字段
             console.log(`[Card URL] Stream chunk - hasCardAttachment: ${!!grok.cardAttachment}, hasToken: ${!!grok.token}, showCardUrl: ${showCardUrl}`);
@@ -519,6 +534,7 @@ export function createOpenAiStreamFromGrokNdjson(
 
             if (!shouldSkip) controller.enqueue(encoder.encode(makeChunk(id, created, currentModel, content)));
             isThinking = currentIsThinking;
+            }
           }
         }
 
