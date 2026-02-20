@@ -336,8 +336,12 @@ export function createOpenAiStreamFromGrokNdjson(
               const grok = (data as any).result?.response;
               if (!grok) continue;
 
-            // 调试：打印 grok 对象的关键字段
-            console.log(`[Card URL] Stream chunk - hasCardAttachment: ${!!grok.cardAttachment}, hasToken: ${!!grok.token}, showCardUrl: ${showCardUrl}`);
+            // 调试：打印原始 JSON 和 grok 对象
+            if (showCardUrl) {
+              console.log(`[Card URL] Raw JSON: ${jsonStr.substring(0, 200)}`);
+              console.log(`[Card URL] Grok keys: ${Object.keys(grok).join(", ")}`);
+              console.log(`[Card URL] hasCardAttachment: ${!!grok.cardAttachment}, hasToken: ${!!grok.token}`);
+            }
 
             // 处理卡片附件 - 提取 URL 并立即输出
             if (showCardUrl && grok.cardAttachment) {
